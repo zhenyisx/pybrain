@@ -9,9 +9,10 @@ import re
 import numpy as np
 import cPickle as pkl
 import sys
-from operator import add
+from operator import add, le
 import operator
 import csv
+import time
 
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation, Dropout, TimeDistributedDense
@@ -48,359 +49,24 @@ from config import data_info
 np.random.seed(1337)  # for reproducibility
 
 
-def demo_seq2seq_saelstm(n_timesteps=6):
-    """Sequence to sequence of labels classification using stacked AutoEncoders
-        Input:
-            n_timesteps: the length of sequences (# of time steps)
+def power_estimation(n_timesteps=6, n_stages=0):
     """
-
-    # model parameters
-    pretrain_batch_size = 20
-    finetune_batch_size = 20
-    pretrain_nb_epochs = 100
-    finetune_nb_epochs = 200
-    pretrain_nb_hidden_layers = [630, 256, 128, 64]
-    finetune_nb_hidden_units = 32
-
-    # load data
-    X, y, kf = load_full_data(name_pkl='seq_mci_shuf_cv.p')
-
-    # model training and testing
-    it = 0
-    score_list = []
-    for train_index, test_index in kf:
-        X_train, X_test = \
-                X[train_index, :n_timesteps, :], X[test_index, :n_timesteps, :]
-        y_train, y_test = \
-                y[train_index, :n_timesteps], y[test_index, :n_timesteps]
-
-        X_train = X_train.reshape(X_train.shape[0], -1, 630)
-        X_test = X_test.reshape(X_test.shape[0], -1, 630)
-        y_train = y_train.reshape(y_train.shape[0], -1, 1)
-        y_test = y_test.reshape(y_test.shape[0], -1, 1)
-        X_train = X_train.astype('float32')
-        X_test = X_test.astype('float32')
-        it += 1
-        print('Fold %d Training and Evaluation...' % it)
-        trained_encoders = []
-        X_train_tmp = X_train  # input shape (n_samples, n_steps, n_dim)
-        for n_in, n_out in zip(pretrain_nb_hidden_layers[:-1],
-                               pretrain_nb_hidden_layers[1:]):
-            print('Pre-training the layer: Input {} -> Output {}'.format(
-                n_in, n_out))
-            # Create AE and training
-            ae = Sequential()
-            ae.add(
-                AutoEncoder(
-                    encoder=LSTM(
-                        n_out, input_dim=n_in, return_sequences=True),
-                    decoder=LSTM(
-                        n_in, input_dim=n_out, return_sequences=True),
-                    output_reconstruction=False)
-            )  # output shape: (nb_samples, timesteps, 10)
-            optimizer = RMSprop(lr=0.001, clipnorm=10)
-            ae.compile(optimizer=optimizer, loss='mse')
-            ae.fit(
-                X_train_tmp,
-                X_train_tmp,
-                batch_size=pretrain_batch_size,
-                nb_epoch=pretrain_nb_epochs)  # batch_size=pretrain_batch_size,
-            # Store trainined weight
-            trained_encoders.append(ae.layers[0].encoder)
-            # Update training data
-            X_train_tmp = ae.predict(X_train_tmp)
-
-        # Fine-tuning
-        print('Fine-tuning')
-        for encoder in trained_encoders:
-            model.add(encoder)
-        model.add(Dropout(0.5))
-        model.add(TimeDistributedDense(1))
-        model.add(Activation('sigmoid'))
-        model.compile(
-            loss='binary_crossentropy', optimizer='adam', class_mode='binary')
-        model.fit(X_train,
-                  y_train,
-                  nb_epoch=finetune_nb_epochs,
-                  batch_size=finetune_batch_size,
-                  show_accuracy=True,
-                  verbose=1,
-                  validation_split=0.1)
-        y_predict = model.predict_classes(X_test)
-        scores = [accuracy_score(
-            np.reshape(y_test, (-1, 1)),
-            np.reshape(y_predict, (-1, 1))), f1_score(
-                np.reshape(y_test, (-1, 1)), np.reshape(y_predict, (-1, 1)))]
-        score_list.append(scores)
-        print scores
-
-    # results presentation
-    print(model.get_config())
-    for s in score_list:
-        print('Acc: %.4f\tF1: %.4f' % (s[0], s[1]))
-    print('Mean Accuracy: %.4f\tMean F1: %.4f' %
-          (np.mean([s[0] for s in score_list]),
-           np.mean([s[1] for s in score_list])))
-
-
-def demo_seq2label_saelstm(n_timesteps=6):
-    """Sequence to label classification using stacked AutoEncoders + LSTM
-        Input:
-            n_timesteps: the length of sequences (# of time steps)
+    power estimation for rnn models
+     -- permute the labels
+     -- train rnn with permuted labels
+     -- compute the p-value
     """
-
-    # model parameters
-    # pretrain_batch_size = 20
-    # finetune_batch_size = 20
-    pretrain_nb_epochs = 100
-    finetune_nb_epochs = 200
-    pretrain_nb_hidden_layers = [630, 256, 128, 64]
-    finetune_nb_hidden_units = 32
-
-    # load data
-    X, y, kf = load_full_data()
-
-    # model evaluation
-    it = 0
-    score_list = []
-    for train_index, test_index in kf:
-        X_train, X_test = \
-                X[train_index, :n_timesteps, :], X[test_index, :n_timesteps, :]
-        y_train, y_test = y[train_index], y[test_index]
-
-        # X_train = X_train.reshape(X_train.shape[0], -1, 630)
-        # X_test = X_test.reshape(X_test.shape[0], -1, 630)
-        X_train = X_train.astype('float32')
-        X_test = X_test.astype('float32')
-        it += 1
-        print('Fold %d Training and Evaluation...' % it)
-        # Layer-wise pre-training
-        trained_encoders = []
-        X_train_tmp = X_train  # input shape (n_samples, n_steps, n_dim)
-        for n_in, n_out in zip(pretrain_nb_hidden_layers[:-1],
-                               pretrain_nb_hidden_layers[1:]):
-            print('Pre-training the layer: Input {} -> Output {}'.format(
-                n_in, n_out))
-            # Create AE and training
-            ae = Sequential()
-            # ae.add(TimeDistributedDense(n_in,input_dim=n_in)) # output shape: (nb_samples, timesteps, 10)
-            ae.add(
-                AutoEncoder(
-                    encoder=LSTM(
-                        n_out, input_dim=n_in, return_sequences=True),
-                    decoder=LSTM(
-                        n_in, input_dim=n_out, return_sequences=True),
-                    output_reconstruction=False)
-            )  # output shape: (nb_samples, timesteps, 10)
-            optimizer = RMSprop(lr=0.001, clipnorm=10)
-            ae.compile(optimizer=optimizer, loss='mse')
-            ae.fit(
-                X_train_tmp, X_train_tmp,
-                nb_epoch=pretrain_nb_epochs)  # batch_size=pretrain_batch_size,
-            # Store trainined weight
-            trained_encoders.append(ae.layers[0].encoder)
-            # Update training data
-            X_train_tmp = ae.predict(X_train_tmp)
-        # Fine-tuning
-        print('Fine-tuning')
-        model = Sequential()
-        for encoder in trained_encoders:
-            model.add(encoder)
-        model.add(
-            LSTM(
-                finetune_nb_hidden_units,
-                activation='sigmoid',
-                inner_activation='hard_sigmoid',
-                input_dim=pretrain_nb_hidden_layers[-1],
-                return_sequences=False))
-        model.add(Dropout(0.5))
-        model.add(Dense(1))
-        model.add(Activation('sigmoid'))
-        model.compile(
-            loss='binary_crossentropy', optimizer='adam', class_mode='binary')
-        model.fit(X_train,
-                  y_train,
-                  nb_epoch=finetune_nb_epochs,
-                  show_accuracy=True,
-                  verbose=1,
-                  validation_split=0.1)
-        y_predict = model.predict_classes(X_test)
-        scores = [accuracy_score(y_test, y_predict),
-                  f1_score(y_test, y_predict)]
-        score_list.append(scores)
-        print scores
-
-    # results presentation
-    print(model.get_config())
-    for s in score_list:
-        print('Acc: %.4f\tF1: %.4f' % (s[0], s[1]))
-    print('Mean Accuracy: %.4f\tMean F1: %.4f' %
-          (np.mean([s[0] for s in score_list]),
-           np.mean([s[1] for s in score_list])))
-
-
-def demo_seq2seq_lstm(n_timesteps=6):
-    """Sequence to sequence (label sequence) classification using LSTM
-        Input:
-            n_timesteps: the length of sequences (# of time steps)
-    """
-
-    # model parameters
-    # batch_size = 20
-    # nb_classes = 10
-    nb_epochs = 200
-    hidden_units = 64
-
-    # load data
-    X, y, kf = load_full_data(name_pkl='seq_mci_shuf_cv.p')
-
-    # model structure
-    model = Sequential()
-    model.add(
-        LSTM(
-            hidden_units,
-            activation='sigmoid',
-            inner_activation='hard_sigmoid',
-            input_dim=X.shape[-1],
-            return_sequences=True))
-    model.add(Dropout(0.5))
-    model.add(TimeDistributedDense(1))
-    model.add(Activation('sigmoid'))
-    model.compile(
-        loss='binary_crossentropy', optimizer='adam', class_mode='binary')
-
-    # model training and testing
-    it = 0
-    score_list = []
-    for train_index, test_index in kf:
-        X_train, X_test = \
-                X[train_index, :n_timesteps, :], X[test_index, :n_timesteps, :]
-        y_train, y_test = \
-                y[train_index, :n_timesteps], y[test_index, :n_timesteps]
-
-        X_train = X_train.reshape(X_train.shape[0], -1, 630)
-        X_test = X_test.reshape(X_test.shape[0], -1, 630)
-        y_train = y_train.reshape(y_train.shape[0], -1, 1)
-        y_test = y_test.reshape(y_test.shape[0], -1, 1)
-        X_train = X_train.astype('float32')
-        X_test = X_test.astype('float32')
-        it += 1
-        print('Fold %d Training and Evaluation...' % it)
-        model.fit(X_train,
-                  y_train,
-                  nb_epoch=nb_epochs,
-                  show_accuracy=True,
-                  verbose=1,
-                  validation_split=0.1)
-        y_predict = model.predict_classes(X_test)
-        scores = [accuracy_score(
-            np.reshape(y_test, (-1, 1)),
-            np.reshape(y_predict, (-1, 1))), f1_score(
-                np.reshape(y_test, (-1, 1)), np.reshape(y_predict, (-1, 1)))]
-        score_list.append(scores)
-        print scores
-
-    # results presentation
-    print(model.get_config())
-    for s in score_list:
-        print('Acc: %.4f\tF1: %.4f' % (s[0], s[1]))
-    print('Mean Accuracy: %.4f\tMean F1: %.4f' %
-          (np.mean([s[0] for s in score_list]),
-           np.mean([s[1] for s in score_list])))
-
-
-def demo_seq2label_lstm(n_timesteps=6):
-    """Sequence to label classification using LSTM
-        Input:
-            n_timesteps: the length of sequences (# of time steps)
-        Output:
-            label: 1 (converted) or 0 (not converted)
-    """
-
-    # model paramters
-    # batch_size = 20
-    # nb_classes = 10
-    nb_epochs = 200
-    hidden_units = 64
-    # mpath = '/home/zhen/Projects/Data/MCI/'
-    # load data
-    # X, y, kf = load_full_data(
-    #     name_pkl='mci2ad_%dt_prediction_shuf_cv.p' % n_timesteps)
-    X, y, kf = load_over_data(name_pkl='mci2ad_%dt_prediction_over_shuf_cv.p' %
-                              n_timesteps)
-
-    # model structure
-    model = Sequential()
-    model.add(
-        LSTM(
-            hidden_units,
-            activation='sigmoid',
-            inner_activation='hard_sigmoid',
-            input_dim=X.shape[-1],
-            input_length=n_timesteps,
-            return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(
-        Dense(
-            1, W_regularizer=l1(0.01), activity_regularizer=activity_l1(0.01)))
-    model.add(Activation('sigmoid'))
-    model.compile(
-        loss='binary_crossentropy', optimizer='adam', class_mode='binary')
-
-    # model training and testing
-    it = 0
-    score_list = []
-    for train_index, test_index in kf:
-        X_train, X_test = \
-                X[train_index, :n_timesteps, :], X[test_index, :n_timesteps, :]
-        y_train, y_test = y[train_index], y[test_index]
-        X_train = X_train.astype('float32')
-        X_test = X_test.astype('float32')
-        it += 1
-        print('Fold %d Training and Evaluation...' % it)
-        model.fit(X_train,
-                  y_train,
-                  nb_epoch=nb_epochs,
-                  show_accuracy=True,
-                  verbose=1,
-                  validation_split=0.1)
-        y_predict = model.predict_classes(X_test)
-        # print y_test
-        # print y_predict
-        # raw_input('wait')
-        scores = [accuracy_score(y_test, y_predict),
-                  f1_score(y_test, y_predict)]
-        score_list.append(scores)
-        print scores
-        json_string = model.to_json()
-#         open(data_info['path'] + 'mci2ad_%dt_prediction_over_cv%d_model_tf.json' %
-#              (n_timesteps, it), 'w').write(json_string)
-#         model.save_weights(
-#             data_info['path'] + 'mci2ad_%dt_prediction_over_cv%d_model_weights_tf.h5' % (
-#                 n_timesteps, it))
-
-# results presentation
-    print(model.get_config())
-    for s in score_list:
-        print('Acc: %.4f\tF1: %.4f' % (s[0], s[1]))
-    print('Mean Accuracy: %.4f\tMean F1: %.4f' %
-          (np.mean([s[0] for s in score_list]),
-           np.mean([s[1] for s in score_list])))
-
-
-def demo_seq2label_lstm_overdata(n_timesteps=6):
-    """Sequence to label classification using LSTM
-        Description: using oversampled data
-        Input:
-            n_timesteps: the length of sequences (# of time steps)
-    """
-
-    # model paramters
+    n_permutation = 1000
     nb_epochs = 200
     hidden_units = 64
     ndim = 630
-    dataset = load_over_data(name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' %
-                             n_timesteps)
+    if n_stages == 0:
+        dataset = load_over_data(
+            name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps)
+    else:
+        dataset = load_over_data(
+            name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+            (n_timesteps, n_stages))
 
     # model structure
     model = Sequential()
@@ -423,53 +89,172 @@ def demo_seq2label_lstm_overdata(n_timesteps=6):
         loss='binary_crossentropy', optimizer='adam', class_mode='binary')
 
     # model training and testing
-    score_list = []
-    for it in range(len(dataset)):
+    #
+    pvals = []
+    for it in range(0, min(1, len(dataset))):
         X_train, y_train, X_test, y_test = \
                 dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
         X_train = np.asarray(X_train, dtype='float32')
         X_test = np.asarray(X_test, dtype='float32')
-        y_train = np.asarray(y_train, dtype='int32')
         y_test = np.asarray(y_test, dtype='int32')
-        print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
-        print('Fold %d Training and Evaluation...' % (it + 1))
-        model.fit(X_train,
-                  y_train,
-                  nb_epoch=nb_epochs,
-                  show_accuracy=True,
-                  verbose=1,
-                  validation_split=0.1)
-        y_predict = model.predict_classes(X_test)
-        fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
-        scores = [accuracy_score(y_test, y_predict),
-                  f1_score(y_test, y_predict), tpr[1], 1 - fpr[1]]
-        # scores = [accuracy_score(y_test, y_predict),
-        #           f1_score(y_test, y_predict)]
-        score_list.append(scores)
-        print scores
-        json_string = model.to_json()
-        open(data_info['path'] +
-             'mci2ad_%dt_prediction_over_cv%d_model_tf_sparse.json' %
-             (n_timesteps, it), 'w').write(json_string)
-        model.save_weights(
-            data_info['path'] +
-            'mci2ad_%dt_prediction_over_cv%d_model_weights_tf_sparse.h5' % (
-                n_timesteps, it))
-
+        y_train = np.asarray(y_train, dtype='int32')
+        y_train_list = [y_train]
+        for it2 in range(n_permutation):
+            y_train_list.append(np.random.permutation(y_train))
+            # print y_train_list
+            # raw_input()
+        score_list = []
+        for y_train in y_train_list:
+            print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+            print('Fold %d Training and Evaluation...' % (it + 1))
+            model.fit(X_train,
+                      y_train,
+                      nb_epoch=nb_epochs,
+                      show_accuracy=True,
+                      verbose=1,
+                      validation_split=0.1)
+            y_predict = model.predict_classes(X_test)
+            y_predict = [l[0] for l in y_predict]
+            if sum(y_predict) == 0 or sum(y_predict) == len(y_predict):
+                continue
+            fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
+            cid = list(thresholds).index(1)
+            scores = [accuracy_score(y_test, y_predict),
+                      f1_score(y_test, y_predict), tpr[cid], 1 - fpr[cid]]
+            score_list.append(scores)
+        # evaluate p-value
+        # print score_list
+        pval_list = [0] * len(score_list[0])
+        for i in range(1, len(score_list)):
+            pval_list = map(add, pval_list, map(float, map(le, score_list[0],
+                                                           score_list[i])))
+        #     print pval_list
+        # print pval_list
+        pval_list = map(lambda x: x / float(len(score_list) - 1), pval_list)
+        pvals.append(pval_list)
+        # print pvals
+        # print pval_list
+        # raw_input()
     # results presentation
-    print(model.get_config())
+    # print(model.get_config())
+    print 'P-Values:'
     print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
-    for s in score_list:
+    for s in pvals:
         print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
     print '\t'.join(
         ['Mean Accuracy', 'Mean F1', 'Mean Sensitivity', 'Mean Specificity'])
-    print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in score_list]),
-                                      np.mean([s[1] for s in score_list]),
-                                      np.mean([s[2] for s in score_list]),
-                                      np.mean([s[3] for s in score_list]), ))
+    print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in pvals]),
+                                      np.mean([s[1] for s in pvals]),
+                                      np.mean([s[2] for s in pvals]),
+                                      np.mean([s[3] for s in pvals]), ))
+    print len(score_list) - 1
 
 
-def demo_seq2label_cnn_overdata(n_timesteps=6):
+def demo_seq2label_lstm_overdata(n_timesteps=6, n_stages=0, n_samples=0):
+    """Sequence to label classification using LSTM
+        Description: using oversampled data
+        Input:
+            n_timesteps: the length of sequences (# of time steps)
+            n_stages: ahead of convertion
+    """
+    # model paramters
+    nb_epochs = 200
+    hidden_units = 128
+    ndim = 630
+    # model structure
+    model = Sequential()
+    model.add(
+        LSTM(
+            hidden_units,
+            activation='sigmoid',
+            inner_activation='hard_sigmoid',
+            input_dim=ndim,
+            input_length=n_timesteps,
+            return_sequences=False,
+            W_regularizer=l1(0.00001),
+            U_regularizer=l1(0.00001),
+            b_regularizer=l1(0.00001)))
+    model.add(Dropout(0.5))
+    # model.add(Dense(1,W_regularizer=l1(0.05), activity_regularizer = activity_l1(0.05)))
+    model.add(Dense(1))
+    model.add(Activation('sigmoid'))
+    model.compile(
+        loss='binary_crossentropy', optimizer='adam', class_mode='binary')
+    res = []
+    for n_sample in range(n_samples):
+        if n_stages == 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_sample))
+        elif n_sample >= 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_stages, n_sample))
+        else:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+                (n_timesteps, n_stages))
+        # raw_input()
+
+        # model training and testing
+        score_list = []
+        for it in range(len(dataset)):
+            X_train, y_train, X_test, y_test = \
+                    dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
+            X_train = np.asarray(X_train, dtype='float32')
+            X_test = np.asarray(X_test, dtype='float32')
+            y_train = np.asarray(y_train, dtype='int32')
+            y_test = np.asarray(y_test, dtype='int32')
+            print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+            print('Fold %d Training and Evaluation...' % (it + 1))
+            model.fit(X_train,
+                      y_train,
+                      nb_epoch=nb_epochs,
+                      show_accuracy=True,
+                      verbose=1,
+                      validation_split=0.1)
+            y_predict = model.predict_classes(X_test)
+            y_predict = [l[0] for l in y_predict]
+            fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
+            cid = list(thresholds).index(1)
+            scores = [accuracy_score(y_test, y_predict),
+                      f1_score(y_test, y_predict), tpr[cid], 1 - fpr[cid]]
+
+            score_list.append(scores)
+            # json_string = model.to_json()
+            # open(data_info['path'] +
+            #      'mci2ad_%dt_prediction_over_cv%d_model_tf_sparse.json' %
+            #      (n_timesteps, it), 'w').write(json_string)
+            # model.save_weights(
+            #     data_info['path'] +
+            #     'mci2ad_%dt_prediction_over_cv%d_model_weights_tf_sparse.h5' % (
+            #         n_timesteps, it))
+
+        # results presentation
+        print(model.get_config())
+        print 'LSTM Results:'
+        print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
+        for s in score_list:
+            print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
+        print '\t'.join(['Mean Accuracy', 'Mean F1', 'Mean Sensitivity',
+                         'Mean Specificity'])
+        print('%.4f\t%.4f\t%.4f\t%.4f' %
+              (np.mean([s[0] for s in score_list]),
+               np.mean([s[1] for s in score_list]),
+               np.mean([s[2] for s in score_list]),
+               np.mean([s[3] for s in score_list]), ))
+        res.append([np.mean([s[0] for s in score_list]),
+                    np.mean([s[1] for s in score_list]),
+                    np.mean([s[2] for s in score_list]),
+                    np.mean([s[3] for s in score_list])])
+    print('%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)' %
+          (np.mean([s[0] for s in res]), np.std([s[0] for s in res]),
+           np.mean([s[1] for s in res]), np.std([s[1] for s in res]),
+           np.mean([s[2] for s in res]), np.std([s[2] for s in res]),
+           np.mean([s[3] for s in res]), np.std([s[3] for s in res])))
+
+
+def demo_seq2label_cnn_overdata(n_timesteps=6, n_stages=0, n_samples=0):
     """Sequence to label classification using SVM
         Description: using oversampled data
         Input:
@@ -477,20 +262,24 @@ def demo_seq2label_cnn_overdata(n_timesteps=6):
     """
 
     # model paramters
-    dataset = load_over_data(name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' %
-                             n_timesteps)
+    # if n_stages == 0:
+    #     dataset = load_over_data(
+    #         name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps)
+    # else:
+    #     dataset = load_over_data(
+    #         name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+    #         (n_timesteps, n_stages))
 
-    batch_size = 16
-    nb_epoch = 12
-
+    # batch_size = 16
+    nb_epoch = 200
     # input image dimensions
-    img_rows, img_cols = n_timesteps, 630
-    input_shape = (img_rows,img_cols,1)#len(dataset[0][0]),
+    img_rows, img_cols = 10, n_timesteps * 63
+    input_shape = (img_rows, img_cols, 1)  #len(dataset[0][0]),
     # number of convolutional filters to use
-    nb_filters = 32
+    nb_filters = 4
     filter_length = 2
-    hidden_dims=32
-    nb_classes=2
+    hidden_dims = 32
+    # nb_classes=2
     # size of pooling area for max pooling
     pool_size = (2, 2)
     # convolution kernel size
@@ -502,22 +291,6 @@ def demo_seq2label_cnn_overdata(n_timesteps=6):
     #     input_shape = (img_rows, img_cols, 1)
 
     model = Sequential()
-    # model.add(Dense(128, input_dim=img_rows*img_cols))
-    # model.add(Dropout(0.25))
-    # model.add(Convolution1D(nb_filter=nb_filters,
-    #                         filter_length=filter_length,
-    #                         border_mode='same',
-    #                         input_shape=input_shape,
-    #                         activation='relu'))
-    # model.add(MaxPooling1D(pool_length=2))
-    # model.add(Flatten())
-    # model.add(Dense(hidden_dims))
-    # model.add(Dropout(0.25))
-    # model.add(Activation('relu'))
-    # model.add(Dense(1))
-    # model.add(Activation('sigmoid'))
-
-
     model.add(
         Convolution2D(
             nb_filters,
@@ -529,82 +302,123 @@ def demo_seq2label_cnn_overdata(n_timesteps=6):
     model.add(Convolution2D(nb_filters, kernel_size[0], kernel_size[1]))
     model.add(Activation('relu'))
     model.add(MaxPooling2D(pool_size=pool_size))
-    model.add(Dropout(0.25))
+    # model.add(Dropout(0.25))
     model.add(Flatten())
     # model.add(Dense(32))
     # model.add(Activation('relu'))
-    # model.add(Dropout(0.5))
-    model.add(Dense(nb_classes, activation='softmax'))
-    # model.add(Activation('softmax'))
-    model.summary()
+    model.add(Dropout(0.5))
+    model.add(Dense(1))
+    model.add(Activation('sigmoid'))
     model.compile(
-        loss='categorical_crossentropy', optimizer='adadelta', metrics=['accuracy'])
+        loss='binary_crossentropy', optimizer='adam', class_mode='binary')
+    #
+    # model.add(Dense(nb_classes))
+    # model.add(Activation('softmax'))
+
+    model.summary()
+    # model.compile(
+    #     loss='categorical_crossentropy', optimizer='adadelta', metrics=['accuracy'])
 
     # model training and testing
-    score_list = []
-    for it in range(len(dataset)):
-        X_train, y_train, X_test, y_test = \
-                dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
-        # img_rows, img_cols = X_train.shape[1], X_train.shape[2]
-        X_train = np.asarray(X_train, dtype='float32')
-        # X_train = X_train.reshape((X_train.shape[0], -1))
-        X_test = np.asarray(X_test, dtype='float32')
-        # X_test = X_test.reshape((X_test.shape[0], -1))
+    res = []
+    for n_sample in range(n_samples):
+        if n_stages == 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_sample))
+        elif n_sample >= 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_stages, n_sample))
+        else:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+                (n_timesteps, n_stages))
 
-        # if K.image_dim_ordering() == 'th':
-        X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols,1)
-        X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols,1)
+        score_list = []
+        for it in range(len(dataset)):
+            X_train, y_train, X_test, y_test = \
+                    dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
+            X_train = np.asarray(X_train, dtype='float32')
+            X_test = np.asarray(X_test, dtype='float32')
+            y_train = np.asarray(y_train, dtype='int32')
+            y_test = np.asarray(y_test, dtype='int32')
+            print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+            #
+            # # img_rows, img_cols = X_train.shape[1], X_train.shape[2]
+            # X_train = np.asarray(X_train, dtype='float32')
+            # # X_train = X_train.reshape((X_train.shape[0], -1))
+            # X_test = np.asarray(X_test, dtype='float32')
+            # # X_test = X_test.reshape((X_test.shape[0], -1))
+            #
+            # # if K.image_dim_ordering() == 'th':
+            X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)
+            X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 1)
 
-        X_train /=100
-        X_test /=100
+            X_train /= 100
+            X_test /= 100
             # input_shape = (1, img_rows, img_cols)
-        # else:
-        #     X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)
-        #     X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 1)
+            # else:
+            #     X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)
+            #     X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 1)
             # input_shape = (img_rows, img_cols, 1)
 
-        # y_train = np.asarray(y_train, dtype='int32')
-        # y_test = np.asarray(y_test, dtype='int32')
+            # y_train = np.asarray(y_train, dtype='int32')
+            # y_test = np.asarray(y_test, dtype='int32')
 
-        Y_train = np_utils.to_categorical(y_train, nb_classes)
-        Y_test = np_utils.to_categorical(y_test, nb_classes)
-        # print X_test
-        # print Y_test
-        print np.amax(X_train)
-        print np.amax(X_test)
+            # Y_train = np_utils.to_categorical(y_train, nb_classes)
+            # Y_test = np_utils.to_categorical(y_test, nb_classes)
+            # print X_test
+            # print Y_test
+            # print np.amax(X_train)
+            # print np.amax(X_test)
 
-        print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
-        # raw_input('wait')
-        print('Fold %d Training and Evaluation...' % (it + 1))
-        model.fit(X_train,
-                  Y_train,
-                  batch_size=batch_size,
-                  nb_epoch=nb_epoch,
-                  verbose=1)#validation_data=(X_test, y_test)
-                #   validation_data=(X_test, Y_test))
-        # model.fit(X_train, y_train)
-        y_predict = model.predict(X_test)
-        fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
-        # print 1-fpr, tpr, thresholds
-        scores = [accuracy_score(y_test, y_predict),
-                  f1_score(y_test, y_predict), tpr[1], 1 - fpr[1]]
-        score_list.append(scores)
-        print scores
-        # raw_input()
+            # print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
+            # raw_input('wait')
+            print('Fold %d Training and Evaluation...' % (it + 1))
+            model.fit(X_train,
+                      y_train,
+                      #   batch_size=batch_size,
+                      nb_epoch=nb_epoch,
+                      show_accuracy=True,
+                      validation_split=0.1,
+                      verbose=1)  #validation_data=(X_test, y_test)
+            #   validation_data=(X_test, Y_test))
+            # model.fit(X_train, y_train)
+            # y_predict = model.predict(X_test)
+            y_predict = model.predict_classes(X_test)
+            y_predict = [l[0] for l in y_predict]
+            fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
+            cid = list(thresholds).index(1)
+            scores = [accuracy_score(y_test, y_predict),
+                      f1_score(y_test, y_predict), tpr[cid], 1 - fpr[cid]]
+            score_list.append(scores)
+            print scores
+            # raw_input()
 
-    # results presentation
-    print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
-    for s in score_list:
-        print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
-    print '\t'.join(
-        ['Mean Accuracy', 'Mean F1', 'Mean Sensitivity', 'Mean Specificity'])
-    print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in score_list]),
-                                      np.mean([s[1] for s in score_list]),
-                                      np.mean([s[2] for s in score_list]),
-                                      np.mean([s[3] for s in score_list]), ))
+        # results presentation
+        print 'CNN Results:'
+        print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
+        for s in score_list:
+            print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
+        print '\t'.join(
+            ['Mean Accuracy', 'Mean F1', 'Mean Sensitivity', 'Mean Specificity'])
+        print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in score_list]),
+                                          np.mean([s[1] for s in score_list]),
+                                          np.mean([s[2] for s in score_list]),
+                                          np.mean([s[3] for s in score_list]), ))
+        res.append([np.mean([s[0] for s in score_list]),
+                    np.mean([s[1] for s in score_list]),
+                    np.mean([s[2] for s in score_list]),
+                    np.mean([s[3] for s in score_list])])
+    print('%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)' %
+          (np.mean([s[0] for s in res]), np.std([s[0] for s in res]),
+           np.mean([s[1] for s in res]), np.std([s[1] for s in res]),
+           np.mean([s[2] for s in res]), np.std([s[2] for s in res]),
+           np.mean([s[3] for s in res]), np.std([s[3] for s in res])))
 
 
-def demo_seq2label_svm_overdata(n_timesteps=6):
+def demo_seq2label_svm_overdata(n_timesteps=6, n_stages=0, n_samples=0):
     """Sequence to label classification using CNN
         Description: using oversampled data
         Input:
@@ -612,44 +426,80 @@ def demo_seq2label_svm_overdata(n_timesteps=6):
     """
 
     # model paramters
-    dataset = load_over_data(name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' %
-                             n_timesteps)
-    model = SVC()
+    # if n_stages == 0:
+    #     dataset = load_over_data(
+    #         name_pkl='mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps)
+    # else:
+    #     dataset = load_over_data(
+    #         name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+    #         (n_timesteps, n_stages))
 
-    # model training and testing
-    score_list = []
-    for it in range(len(dataset)):
-        X_train, y_train, X_test, y_test = \
-                dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
-        X_train = np.asarray(X_train, dtype='float32')
-        X_train = X_train.reshape((X_train.shape[0], -1))
-        X_test = np.asarray(X_test, dtype='float32')
-        X_test = X_test.reshape((X_test.shape[0], -1))
-        y_train = np.asarray(y_train, dtype='int32')
-        y_test = np.asarray(y_test, dtype='int32')
-        print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
-        # raw_input('wait')
-        print('Fold %d Training and Evaluation...' % (it + 1))
-        model.fit(X_train, y_train)
-        y_predict = model.predict(X_test)
-        fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
-        # print 1-fpr, tpr, thresholds
-        scores = [accuracy_score(y_test, y_predict),
-                  f1_score(y_test, y_predict), tpr[1], 1 - fpr[1]]
-        score_list.append(scores)
-        print scores
-        # raw_input()
 
-    # results presentation
-    print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
-    for s in score_list:
-        print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
-    print '\t'.join(
-        ['Mean Accuracy', 'Mean F1', 'Mean Sensitivity', 'Mean Specificity'])
-    print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in score_list]),
-                                      np.mean([s[1] for s in score_list]),
-                                      np.mean([s[2] for s in score_list]),
-                                      np.mean([s[3] for s in score_list]), ))
+    res = []
+    for n_sample in range(n_samples):
+        if n_stages == 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_sample))
+        elif n_sample >= 0:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv_sample%d.p' %
+                (n_timesteps, n_stages, n_sample))
+        else:
+            dataset = load_over_data(
+                name_pkl='mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' %
+                (n_timesteps, n_stages))
+        model = SVC()
+        # model training and testing
+        score_list = []
+        for it in range(len(dataset)):
+            X_train, y_train, X_test, y_test = \
+                    dataset[it][0],dataset[it][1], dataset[it][2], dataset[it][3]
+            X_train = np.asarray(X_train, dtype='float32')
+            X_train = X_train.reshape((X_train.shape[0], -1))
+            X_test = np.asarray(X_test, dtype='float32')
+            X_test = X_test.reshape((X_test.shape[0], -1))
+            y_train = np.asarray(y_train, dtype='int32')
+            y_test = np.asarray(y_test, dtype='int32')
+            print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+            # raw_input('wait')
+            print('Fold %d Training and Evaluation...' % (it + 1))
+            model.fit(X_train, y_train)
+            y_predict = model.predict(X_test)
+            # y_predict = model.predict_classes(X_test)
+            # y_predict = [l[0] for l in y_predict]
+            fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
+            cid = list(thresholds).index(1)
+            scores = [accuracy_score(y_test, y_predict),
+                      f1_score(y_test, y_predict), tpr[cid], 1 - fpr[cid]]
+            # fpr, tpr, thresholds = roc_curve(y_test, y_predict, pos_label=1)
+            # # print 1-fpr, tpr, thresholds
+            # scores = [accuracy_score(y_test, y_predict),
+            #           f1_score(y_test, y_predict), tpr[1], 1 - fpr[1]]
+            score_list.append(scores)
+            # print scores
+            # raw_input()
+
+        # results presentation
+        print 'SVM Results:'
+        print '\t'.join(['Accuracy', 'F1', 'Sensitivity', 'Specificity'])
+        for s in score_list:
+            print('%.4f\t%.4f\t%.4f\t%.4f' % (s[0], s[1], s[2], s[3]))
+        print '\t'.join(
+            ['Mean Accuracy', 'Mean F1', 'Mean Sensitivity', 'Mean Specificity'])
+        print('%.4f\t%.4f\t%.4f\t%.4f' % (np.mean([s[0] for s in score_list]),
+                                          np.mean([s[1] for s in score_list]),
+                                          np.mean([s[2] for s in score_list]),
+                                          np.mean([s[3] for s in score_list]), ))
+        res.append([np.mean([s[0] for s in score_list]),
+                    np.mean([s[1] for s in score_list]),
+                    np.mean([s[2] for s in score_list]),
+                    np.mean([s[3] for s in score_list])])
+    print('%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)\t%.4f(%.4f)' %
+          (np.mean([s[0] for s in res]), np.std([s[0] for s in res]),
+           np.mean([s[1] for s in res]), np.std([s[1] for s in res]),
+           np.mean([s[2] for s in res]), np.std([s[2] for s in res]),
+           np.mean([s[3] for s in res]), np.std([s[3] for s in res])))
 
 
 def demo_model_analysis_intersection(n_timesteps=6):
@@ -782,10 +632,13 @@ def main():
     )
     demoid = int(raw_input())
     if demoid == 1:
+        n_timesteps, n_stages, n_samples = 1, 4, 10
         # demo_seq2label_lstm(n_timesteps=1)
-        # demo_seq2label_lstm_overdata(n_timesteps=1)
-        # demo_seq2label_svm_overdata(n_timesteps=5)
-        demo_seq2label_cnn_overdata(n_timesteps=2)
+        demo_seq2label_svm_overdata(
+            n_timesteps=n_timesteps, n_stages=n_stages, n_samples=n_samples)
+        # demo_seq2label_svm_overdata(n_timesteps=4,n_stages=1)
+        # demo_seq2label_cnn_overdata(n_timesteps=n_timesteps, n_stages=n_stages)
+        print 'n_timesteps:%d n_stages:%d n_samples:%d'%(n_timesteps, n_stages, n_samples)
     elif demoid == 2:
         demo_seq2seq_lstm(n_timesteps=3)
     elif demoid == 3:
@@ -799,8 +652,14 @@ def main():
         # demo_seq2score_lstm(n_timesteps=int(raw_input('Please input # of time steps:')))
         demo_seq2score_linear(
             n_timesteps=int(raw_input('Please input # of time steps:')))
+    elif demoid == 7:
+        n_timesteps, n_stages = 5, 0
+        power_estimation(n_timesteps=n_timesteps, n_stages=n_stages)
+        print n_timesteps, n_stages
     else:
         print('demo type not supported')
 
 if __name__ == '__main__':
+    start_time = time.time()
     main()
+    print '--- %s seconds ---' % (time.time() - start_time)
