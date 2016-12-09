@@ -77,8 +77,8 @@ def label_preproc(ipath='/home/zhen/Projects/Data/MCI/',
     with open(ipath + ifile, 'r') as f:
         lines = f.readlines()
         for iline in lines:
-            patid = id_extract(iline,
-                               id_pattern=re.compile(ur'^\[Subj. ID: (\d+)\]'))
+            patid = id_extract(
+                iline, id_pattern=re.compile(ur'^\[Subj. ID: (\d+)\]'))
             if patid is not None:
                 cid = patid
             if iline.startswith('Current'):
@@ -95,8 +95,10 @@ def label_preproc(ipath='/home/zhen/Projects/Data/MCI/',
             else:
                 continue
 
+
 def score_preproc(ipath='/home/zhen/Projects/Data/MCI/',
-                  ifiles=['ADNIDataInfo_ClinicalScores_MCI_Convert.txt','ADNIDataInfo_ClinicalScores_MCI_Non_Convert.txt'],
+                  ifiles=['ADNIDataInfo_ClinicalScores_MCI_Convert.txt',
+                          'ADNIDataInfo_ClinicalScores_MCI_Non_Convert.txt'],
                   opath='/home/zhen/Projects/Data/MCI/'):
     """Extract scores from raw file
         Input:
@@ -108,16 +110,20 @@ def score_preproc(ipath='/home/zhen/Projects/Data/MCI/',
     mmse_score_dict = {}
     mmse_pos = 5
     id_pos = 0
-    time_pos=1
+    time_pos = 1
     for ifile in ifiles:
         with open(ipath + ifile, 'r') as f:
             lines = f.readlines()
             for iline in lines:
                 words = iline.split()
                 if not int(words[id_pos]) in mmse_score_dict:
-                    mmse_score_dict[int(words[id_pos])]={int(words[time_pos]):float(words[mmse_pos])}
+                    mmse_score_dict[int(words[id_pos])] = {
+                        int(words[time_pos]): float(words[mmse_pos])
+                    }
                 else:
-                    mmse_score_dict[int(words[id_pos])].update({int(words[time_pos]):float(words[mmse_pos])})
+                    mmse_score_dict[int(words[id_pos])].update({
+                        int(words[time_pos]): float(words[mmse_pos])
+                    })
     pkl.dump(mmse_score_dict, open(opath + 'mmse_score_dict.p', 'wb'))
 
 
@@ -207,6 +213,7 @@ def save_prediction_data(n_timesteps=5):
     # raw_input('wait')
     pkl.dump([X, y, kf], open(path_pkl + name_pkl, 'wb'))
 
+
 def save_regression_data(n_timesteps=5):
     """Save full MCI data in pkl format
         * for prediction of score (predict the mmse score of the patient soon)
@@ -232,7 +239,7 @@ def save_regression_data(n_timesteps=5):
         pid = id_extract(f)
         if int(pid) in mmse_score_dict:
             if n_timesteps in mmse_score_dict[int(pid)]:
-                if mmse_score_dict[int(pid)][n_timesteps] >=0:
+                if mmse_score_dict[int(pid)][n_timesteps] >= 0:
                     z = np.zeros(shape, dtype=float)
                     x0 = np.genfromtxt(path_conv + f, delimiter=',')
                     x = x0[:n_timesteps, :]
@@ -244,7 +251,7 @@ def save_regression_data(n_timesteps=5):
         pid = id_extract(f)
         if int(pid) in mmse_score_dict:
             if n_timesteps in mmse_score_dict[int(pid)]:
-                if mmse_score_dict[int(pid)][n_timesteps] >=0:
+                if mmse_score_dict[int(pid)][n_timesteps] >= 0:
                     z = np.zeros(shape, dtype=float)
                     x0 = np.genfromtxt(path_ncon + f, delimiter=',')
                     x = x0[:n_timesteps, :]
@@ -252,8 +259,8 @@ def save_regression_data(n_timesteps=5):
                     X.append(z)
                     y.append(mmse_score_dict[int(pid)][n_timesteps])
     print len(X), len(y)
-    X = np.asarray(X,dtype='float32')
-    y = np.asarray(y,dtype='float32')
+    X = np.asarray(X, dtype='float32')
+    y = np.asarray(y, dtype='float32')
     X, y = shuffle(X, y, random_state=0)
     print 'time steps: %d' % n_timesteps
     print X.shape, y.shape
@@ -261,6 +268,7 @@ def save_regression_data(n_timesteps=5):
     # print kf
     # raw_input('wait')
     pkl.dump([X, y, kf], open(path_pkl + name_pkl, 'wb'))
+
 
 def save_regression_dif_data(n_timesteps=5):
     """Save full MCI data in pkl format
@@ -286,29 +294,37 @@ def save_regression_dif_data(n_timesteps=5):
     for f in fs1:
         pid = id_extract(f)
         if int(pid) in mmse_score_dict:
-            if n_timesteps in mmse_score_dict[int(pid)] and n_timesteps-1 in mmse_score_dict[int(pid)]:
-                if mmse_score_dict[int(pid)][n_timesteps] >=0 and mmse_score_dict[int(pid)][n_timesteps-1] >=0:
+            if n_timesteps in mmse_score_dict[int(
+                    pid)] and n_timesteps - 1 in mmse_score_dict[int(pid)]:
+                if mmse_score_dict[int(pid)][
+                        n_timesteps] >= 0 and mmse_score_dict[int(pid)][
+                            n_timesteps - 1] >= 0:
                     z = np.zeros(shape, dtype=float)
                     x0 = np.genfromtxt(path_conv + f, delimiter=',')
                     x = x0[:n_timesteps, :]
                     z[:x.shape[0], :x.shape[1]] = x
                     X.append(z)
-                    y.append(mmse_score_dict[int(pid)][n_timesteps-1] - mmse_score_dict[int(pid)][n_timesteps])
+                    y.append(mmse_score_dict[int(pid)][n_timesteps - 1] -
+                             mmse_score_dict[int(pid)][n_timesteps])
     print len(X), len(y)
     for f in fs0:
         pid = id_extract(f)
         if int(pid) in mmse_score_dict:
-            if n_timesteps in mmse_score_dict[int(pid)] and n_timesteps-1 in mmse_score_dict[int(pid)]:
-                if mmse_score_dict[int(pid)][n_timesteps] >=0 and mmse_score_dict[int(pid)][n_timesteps-1] >=0:
+            if n_timesteps in mmse_score_dict[int(
+                    pid)] and n_timesteps - 1 in mmse_score_dict[int(pid)]:
+                if mmse_score_dict[int(pid)][
+                        n_timesteps] >= 0 and mmse_score_dict[int(pid)][
+                            n_timesteps - 1] >= 0:
                     z = np.zeros(shape, dtype=float)
                     x0 = np.genfromtxt(path_ncon + f, delimiter=',')
                     x = x0[:n_timesteps, :]
                     z[:x.shape[0], :x.shape[1]] = x
                     X.append(z)
-                    y.append(mmse_score_dict[int(pid)][n_timesteps-1] - mmse_score_dict[int(pid)][n_timesteps])
+                    y.append(mmse_score_dict[int(pid)][n_timesteps - 1] -
+                             mmse_score_dict[int(pid)][n_timesteps])
     print len(X), len(y)
-    X = np.asarray(X,dtype='float32')
-    y = np.asarray(y,dtype='float32')
+    X = np.asarray(X, dtype='float32')
+    y = np.asarray(y, dtype='float32')
     X, y = shuffle(X, y, random_state=0)
     print 'time steps: %d' % n_timesteps
     print X.shape, y.shape
@@ -316,6 +332,7 @@ def save_regression_dif_data(n_timesteps=5):
     # print kf
     # raw_input('wait')
     pkl.dump([X, y, kf], open(path_pkl + name_pkl, 'wb'))
+
 
 def save_prediction_data_oversample(n_timesteps=5):
     """Save full MCI data in pkl format
@@ -330,7 +347,7 @@ def save_prediction_data_oversample(n_timesteps=5):
     path_ncon = '/home/zhen/Projects/Data/MCI/DFNConv/'
     path_convlabels = '/home/zhen/Projects/Data/MCI/SeqLabelsConv/'
     path_pkl = '/home/zhen/Projects/Data/MCI/'
-    name_pkl = 'mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps # over2 is different from over
+    name_pkl = 'mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps  # over2 is different from over
     n_dim = 630
     shape = (n_timesteps, n_dim)
     for (r1, ds1, fs1) in walk(path_conv):
@@ -370,23 +387,23 @@ def save_prediction_data_oversample(n_timesteps=5):
 
     # obtain the cv_index
     nb_folds = 5
-    if len(Xp)<nb_folds:
+    if len(Xp) < nb_folds:
         nb_folds = len(Xp)
     print 'folds: %d' % nb_folds
-    kfp = KFold(len(Xp),n_folds=nb_folds) #
-    kfn = KFold(len(Xn),n_folds=nb_folds)
+    kfp = KFold(len(Xp), n_folds=nb_folds)  #
+    kfn = KFold(len(Xn), n_folds=nb_folds)
     Xp_cvlist = []
     Xn_cvlist = []
     yp_cvlist = []
-    yn_cvlist=[]
+    yn_cvlist = []
     Xpte_cvlist = []
     Xnte_cvlist = []
     ypte_cvlist = []
-    ynte_cvlist=[]
-    Xtr_cvlist=[]
-    ytr_cvlist=[]
-    Xte_cvlist=[]
-    yte_cvlist=[]
+    ynte_cvlist = []
+    Xtr_cvlist = []
+    ytr_cvlist = []
+    Xte_cvlist = []
+    yte_cvlist = []
     for train_idx, test_idx in kfp:
         # print type(train_idx),train_idx
         # print type(Xp)
@@ -401,20 +418,20 @@ def save_prediction_data_oversample(n_timesteps=5):
         Xnte_cvlist.append([Xn[i] for i in test_idx])
         ynte_cvlist.append([yn[i] for i in test_idx])
     for i in range(len(Xp_cvlist)):
-        if len(Xp_cvlist[i])<0.8*len(Xn_cvlist[i]):
+        if len(Xp_cvlist[i]) < 0.8 * len(Xn_cvlist[i]):
             Xp_cvlist[i] *= 2
-            yp_cvlist[i] *=2
-        _Xtr = Xp_cvlist[i]+Xn_cvlist[i]
-        _ytr = yp_cvlist[i]+yn_cvlist[i]
-        _Xte = Xpte_cvlist[i]+Xnte_cvlist[i]
-        _yte = ypte_cvlist[i]+ynte_cvlist[i]
-        _Xtr, _ytr = shuffle(_Xtr,_ytr, random_state=0)
-        _Xte, _yte = shuffle(_Xte,_yte, random_state=0)
+            yp_cvlist[i] *= 2
+        _Xtr = Xp_cvlist[i] + Xn_cvlist[i]
+        _ytr = yp_cvlist[i] + yn_cvlist[i]
+        _Xte = Xpte_cvlist[i] + Xnte_cvlist[i]
+        _yte = ypte_cvlist[i] + ynte_cvlist[i]
+        _Xtr, _ytr = shuffle(_Xtr, _ytr, random_state=0)
+        _Xte, _yte = shuffle(_Xte, _yte, random_state=0)
         Xtr_cvlist.append(_Xtr)
         ytr_cvlist.append(_ytr)
         Xte_cvlist.append(_Xte)
         yte_cvlist.append(_yte)
-    dataset = zip(Xtr_cvlist, ytr_cvlist,Xte_cvlist,yte_cvlist)
+    dataset = zip(Xtr_cvlist, ytr_cvlist, Xte_cvlist, yte_cvlist)
     print type(dataset)
     # obtain oversampled data
 
@@ -429,22 +446,179 @@ def save_prediction_data_oversample(n_timesteps=5):
     pkl.dump(dataset, open(path_pkl + name_pkl, 'wb'))
 
 
-def save_stage_prediction_data_oversample(n_timesteps=5, n_stage=1):
+def check_data_availablity(n_timesteps=5, n_stages=1):
+    """
+        Check availability of data
+    """
+    path_conv = data_info['path'] + 'DFConv/'
+    path_ncon = data_info['path'] + 'DFNConv/'
+    path_convlabels = data_info['path'] + 'SeqLabelsConv/'
+
+    # check the length of data and labels for converted patient
+    for (r1, ds1, fs1) in walk(path_conv):
+        pass
+    n_match = 0
+    n_dismatch = 0
+    for f in fs1:
+        y1 = np.genfromtxt(path_convlabels + f, delimiter=' ')
+        x0 = np.genfromtxt(path_conv + f, delimiter=',')
+        print type(y1), type(x0)
+        idx_of_start = np.where(y1)[0][0]  # the index of first 1
+        print y1
+        print idx_of_start
+        raw_input('wait')
+        if y1.shape[0] == x0.shape[0]:
+            n_match += 1
+        else:
+            n_dismatch += 1
+            print y1.shape[0], x0.shape[0]
+        # print ' '.join(str(x) for x in list(y1.shape)+list(x0.shape))
+    print n_match, n_dismatch
+
+    # check the length of data and labels for converted patient
+    for (r0, ds0, fs0) in walk(path_ncon):
+        pass
+    n_length = {}
+    for f in fs0:
+        x0 = np.genfromtxt(path_ncon + f, delimiter=',')
+        n_length[x0.shape[0]] = n_length.get(x0.shape[0], 0) + 1
+    for k, v in n_length.iteritems():
+        print k, v
+
+
+def save_stage_prediction_data_oversample(n_timesteps=5, n_stages=1):
     """Save full MCI data in pkl format
         * for prediction
           * predict whether a patient will convert with:
-            ## n_stage before convert
-            ## n_timesteps of observations
+            ## n_stage before convert (1 stage = 6 months)
+            ## n_timesteps of observations we have
         * oversample/repeat the positive examples utill achieve a balanced dataset
+        * step 1: obtain raw data
+        * step 2: obtain cross-validate data
+        * step 3: oversample the dataset to make it balanced
+    """
+    path_conv = data_info['path'] + 'DFConv/'
+    path_ncon = data_info['path'] + 'DFNConv/'
+    path_convlabels = data_info['path'] + 'SeqLabelsConv/'
+    path_pkl = data_info['path']  #+'/home/zhen/Projects/Data/MCI/'
+    name_pkl = 'mci2ad_%dt_%ds_prediction_over2_shuf_cv.p' % (
+        n_timesteps, n_stages)  # over2 is different from over
+    n_dim = 630
+    shape = (n_timesteps, n_dim)
+    for (r1, ds1, fs1) in walk(path_conv):
+        pass
+    for (r0, ds0, fs0) in walk(path_ncon):
+        pass
+
+    # obtain the raw data
+    Xp = []  # data ndarray for positive
+    yp = []  # label vector for positive
+    Xn = []  # data ndarray for negative
+    yn = []  # label vector for negative
+    for f in fs1:  # get positive samples
+        y1 = np.genfromtxt(path_convlabels + f, delimiter=' ')
+        idx_of_start = np.where(y1)[0][0]  # the index of first 1
+        if idx_of_start >= n_timesteps + n_stages - 1:
+            z = np.zeros(shape, dtype=float)
+            x0 = np.genfromtxt(path_conv + f, delimiter=',')
+            x = x0[idx_of_start - n_timesteps - n_stages + 1:idx_of_start -
+                   n_stages + 1, :]
+            z[:x.shape[0], :x.shape[1]] = x
+            Xp.append(z)
+            yp.append(1)
+    for f in fs0:
+        z = np.zeros(shape, dtype=float)
+        x0 = np.genfromtxt(path_ncon + f, delimiter=',')
+        x = x0[:n_timesteps, :]
+        z[:x.shape[0], :x.shape[1]] = x
+        Xn.append(z)
+        # X.append(np.genfromtxt(path_conv+f,delimiter=','))
+        yn.append(0)
+
+    # obtain the cv_index
+    nb_folds = 5
+    if len(Xp) < nb_folds:
+        nb_folds = len(Xp)
+    # print 'folds: %d' % nb_folds
+    print 'stage: %d vs. timestamp: %d vs. positive: %d vs. negative: %d' % (
+        n_stages, n_timesteps, len(yp), len(yn))
+    kfp = KFold(len(Xp), n_folds=nb_folds)  #
+    kfn = KFold(len(Xn), n_folds=nb_folds)
+    Xp_cvlist = []
+    Xn_cvlist = []
+    yp_cvlist = []
+    yn_cvlist = []
+    Xpte_cvlist = []
+    Xnte_cvlist = []
+    ypte_cvlist = []
+    ynte_cvlist = []
+    Xtr_cvlist = []
+    ytr_cvlist = []
+    Xte_cvlist = []
+    yte_cvlist = []
+    for train_idx, test_idx in kfp:
+        # print type(train_idx),train_idx
+        # print type(Xp)
+        # print itemgetter(train_idx)(Xp)
+        Xp_cvlist.append([Xp[i] for i in train_idx])
+        yp_cvlist.append([yp[i] for i in train_idx])
+        Xpte_cvlist.append([Xp[i] for i in test_idx])
+        ypte_cvlist.append([yp[i] for i in test_idx])
+    for train_idx, test_idx in kfn:
+        Xn_cvlist.append([Xn[i] for i in train_idx])
+        yn_cvlist.append([yn[i] for i in train_idx])
+        Xnte_cvlist.append([Xn[i] for i in test_idx])
+        ynte_cvlist.append([yn[i] for i in test_idx])
+    for i in range(len(Xp_cvlist)):
+        if len(Xp_cvlist[i]) < 0.8 * len(Xn_cvlist[i]):
+            Xp_cvlist[i] *= 2
+            yp_cvlist[i] *= 2
+        _Xtr = Xp_cvlist[i] + Xn_cvlist[i]
+        _ytr = yp_cvlist[i] + yn_cvlist[i]
+        _Xte = Xpte_cvlist[i] + Xnte_cvlist[i]
+        _yte = ypte_cvlist[i] + ynte_cvlist[i]
+        _Xtr, _ytr = shuffle(_Xtr, _ytr, random_state=0)
+        _Xte, _yte = shuffle(_Xte, _yte, random_state=0)
+        Xtr_cvlist.append(_Xtr)
+        ytr_cvlist.append(_ytr)
+        Xte_cvlist.append(_Xte)
+        yte_cvlist.append(_yte)
+    dataset = zip(Xtr_cvlist, ytr_cvlist, Xte_cvlist, yte_cvlist)
+    # print type(dataset)
+    # obtain oversampled data
+
+    # X = np.asarray(Xp+Xn)
+    # y = np.asarray(yp+yn)
+    # X, y = shuffle(X, y, random_state=0)
+    # print 'time steps: %d' % n_timesteps
+    # print X.shape, y.shape, np.sum(y), len(y) - np.sum(y)
+    # kf = KFold(len(y), n_folds=5)
+    # # print kf
+    # # raw_input('wait')
+    pkl.dump(dataset, open(path_pkl + name_pkl, 'wb'))
+
+
+def save_prediction_data_oversample_repeat(n_timesteps=5,n_samples=30):
+    """Save full MCI data in pkl format
+        * for prediction (predict whether a patient will convert no matter how
+        * soon)
+        * oversample the positive examples utill achieve a balanced dataset
         * step 1: obtain original data
         * step 2: obtain cross-validate data
         * step 3: oversample the dataset to make it balanced
     """
-    path_conv = '/home/zhen/Projects/Data/MCI/DFConv/'
-    path_ncon = '/home/zhen/Projects/Data/MCI/DFNConv/'
-    path_convlabels = '/home/zhen/Projects/Data/MCI/SeqLabelsConv/'
-    path_pkl = '/home/zhen/Projects/Data/MCI/'
-    name_pkl = 'mci2ad_%dt_prediction_over2_shuf_cv.p' % n_timesteps # over2 is different from over
+    # path_conv = '/home/zhen/Projects/Data/MCI/DFConv/'
+    # path_ncon = '/home/zhen/Projects/Data/MCI/DFNConv/'
+    # path_convlabels = '/home/zhen/Projects/Data/MCI/SeqLabelsConv/'
+    # path_pkl = '/home/zhen/Projects/Data/MCI/'
+
+    path_conv = data_info['path'] + 'DFConv/'
+    path_ncon = data_info['path'] + 'DFNConv/'
+    path_convlabels = data_info['path'] + 'SeqLabelsConv/'
+    path_pkl = data_info['path']
+
+
+    name_pkl = 'mci2ad_%dt_prediction_over2_shuf_cv' % n_timesteps  # over2 is different from over
     n_dim = 630
     shape = (n_timesteps, n_dim)
     for (r1, ds1, fs1) in walk(path_conv):
@@ -452,97 +626,191 @@ def save_stage_prediction_data_oversample(n_timesteps=5, n_stage=1):
     for (r0, ds0, fs0) in walk(path_ncon):
         pass
 
-    # obtain the raw data
-    Xp = []  # data ndarray for positive
-    yp = []  # label vector for positive
-    Xn = []  # data ndarray for negative
-    yn = []  # label vector for negative
-    for f in fs1:
-        y1 = np.genfromtxt(path_convlabels + f, delimiter=' ')
-        if y1[n_timesteps - 1] == 0:
+    for nsample in range(n_samples):
+        # obtain the raw data
+        Xp = []  # data ndarray for positive
+        yp = []  # label vector for positive
+        Xn = []  # data ndarray for negative
+        yn = []  # label vector for negative
+        for f in fs1:
+            y1 = np.genfromtxt(path_convlabels + f, delimiter=' ')
+            if y1[n_timesteps - 1] == 0:
+                z = np.zeros(shape, dtype=float)
+                x0 = np.genfromtxt(path_conv + f, delimiter=',')
+                x = x0[:n_timesteps, :]
+                z[:x.shape[0], :x.shape[1]] = x
+                Xp.append(z)
+                yp.append(1)
+        for f in fs0:
             z = np.zeros(shape, dtype=float)
-            x0 = np.genfromtxt(path_conv + f, delimiter=',')
+            x0 = np.genfromtxt(path_ncon + f, delimiter=',')
             x = x0[:n_timesteps, :]
             z[:x.shape[0], :x.shape[1]] = x
-            Xp.append(z)
-            yp.append(1)
-    for f in fs0:
-        z = np.zeros(shape, dtype=float)
-        x0 = np.genfromtxt(path_ncon + f, delimiter=',')
-        x = x0[:n_timesteps, :]
-        z[:x.shape[0], :x.shape[1]] = x
-        Xn.append(z)
-        # X.append(np.genfromtxt(path_conv+f,delimiter=','))
-        yn.append(0)
-    # Xp = np.asarray(Xp)
-    # Xn = np.asarray(Xn)
-    # yp = np.asarray(yp)
-    # yn = np.asarray(yn)
-    # while len(yn)>len(yp):
-    #     yp += yp
-    #     Xp += Xp
-
-    # obtain the cv_index
-    nb_folds = 5
-    if len(Xp)<nb_folds:
-        nb_folds = len(Xp)
-    print 'folds: %d' % nb_folds
-    kfp = KFold(len(Xp),n_folds=nb_folds) #
-    kfn = KFold(len(Xn),n_folds=nb_folds)
-    Xp_cvlist = []
-    Xn_cvlist = []
-    yp_cvlist = []
-    yn_cvlist=[]
-    Xpte_cvlist = []
-    Xnte_cvlist = []
-    ypte_cvlist = []
-    ynte_cvlist=[]
-    Xtr_cvlist=[]
-    ytr_cvlist=[]
-    Xte_cvlist=[]
-    yte_cvlist=[]
-    for train_idx, test_idx in kfp:
-        # print type(train_idx),train_idx
-        # print type(Xp)
-        # print itemgetter(train_idx)(Xp)
-        Xp_cvlist.append([Xp[i] for i in train_idx])
-        yp_cvlist.append([yp[i] for i in train_idx])
-        Xpte_cvlist.append([Xp[i] for i in test_idx])
-        ypte_cvlist.append([yp[i] for i in test_idx])
-    for train_idx, test_idx in kfn:
-        Xn_cvlist.append([Xn[i] for i in train_idx])
-        yn_cvlist.append([yn[i] for i in train_idx])
-        Xnte_cvlist.append([Xn[i] for i in test_idx])
-        ynte_cvlist.append([yn[i] for i in test_idx])
-    for i in range(len(Xp_cvlist)):
-        if len(Xp_cvlist[i])<0.8*len(Xn_cvlist[i]):
-            Xp_cvlist[i] *= 2
-            yp_cvlist[i] *=2
-        _Xtr = Xp_cvlist[i]+Xn_cvlist[i]
-        _ytr = yp_cvlist[i]+yn_cvlist[i]
-        _Xte = Xpte_cvlist[i]+Xnte_cvlist[i]
-        _yte = ypte_cvlist[i]+ynte_cvlist[i]
-        _Xtr, _ytr = shuffle(_Xtr,_ytr, random_state=0)
-        _Xte, _yte = shuffle(_Xte,_yte, random_state=0)
-        Xtr_cvlist.append(_Xtr)
-        ytr_cvlist.append(_ytr)
-        Xte_cvlist.append(_Xte)
-        yte_cvlist.append(_yte)
-    dataset = zip(Xtr_cvlist, ytr_cvlist,Xte_cvlist,yte_cvlist)
-    print type(dataset)
-    # obtain oversampled data
-
-    # X = np.asarray(Xp+Xn)
-    # y = np.asarray(yp+yn)
-    # X, y = shuffle(X, y, random_state=0)
-    # print 'time steps: %d' % n_timesteps
-    # print X.shape, y.shape, np.sum(y), len(y) - np.sum(y)
-    # kf = KFold(len(y), n_folds=5)
-    # # print kf
-    # # raw_input('wait')
-    pkl.dump(dataset, open(path_pkl + name_pkl, 'wb'))
+            Xn.append(z)
+            # X.append(np.genfromtxt(path_conv+f,delimiter=','))
+            yn.append(0)
+        # Xp = np.asarray(Xp)
+        # Xn = np.asarray(Xn)
+        # yp = np.asarray(yp)
+        # yn = np.asarray(yn)
+        # while len(yn)>len(yp):
+        #     yp += yp
+        #     Xp += Xp
+        Xp, yp = shuffle(Xp, yp, random_state=0)
+        Xn, yn = shuffle(Xn, yn, random_state=0)
+        # obtain the cv_index
+        nb_folds = 5
+        if len(Xp) < nb_folds:
+            nb_folds = len(Xp)
+        print 'folds: %d' % nb_folds
+        kfp = KFold(len(Xp), n_folds=nb_folds)  #
+        kfn = KFold(len(Xn), n_folds=nb_folds)
+        Xp_cvlist = []
+        Xn_cvlist = []
+        yp_cvlist = []
+        yn_cvlist = []
+        Xpte_cvlist = []
+        Xnte_cvlist = []
+        ypte_cvlist = []
+        ynte_cvlist = []
+        Xtr_cvlist = []
+        ytr_cvlist = []
+        Xte_cvlist = []
+        yte_cvlist = []
+        for train_idx, test_idx in kfp:
+            # print type(train_idx),train_idx
+            # print type(Xp)
+            # print itemgetter(train_idx)(Xp)
+            Xp_cvlist.append([Xp[i] for i in train_idx])
+            yp_cvlist.append([yp[i] for i in train_idx])
+            Xpte_cvlist.append([Xp[i] for i in test_idx])
+            ypte_cvlist.append([yp[i] for i in test_idx])
+        for train_idx, test_idx in kfn:
+            Xn_cvlist.append([Xn[i] for i in train_idx])
+            yn_cvlist.append([yn[i] for i in train_idx])
+            Xnte_cvlist.append([Xn[i] for i in test_idx])
+            ynte_cvlist.append([yn[i] for i in test_idx])
+        for i in range(len(Xp_cvlist)):
+            if len(Xp_cvlist[i]) < 0.8 * len(Xn_cvlist[i]):
+                Xp_cvlist[i] *= 2
+                yp_cvlist[i] *= 2
+            _Xtr = Xp_cvlist[i] + Xn_cvlist[i]
+            _ytr = yp_cvlist[i] + yn_cvlist[i]
+            _Xte = Xpte_cvlist[i] + Xnte_cvlist[i]
+            _yte = ypte_cvlist[i] + ynte_cvlist[i]
+            _Xtr, _ytr = shuffle(_Xtr, _ytr, random_state=0)
+            _Xte, _yte = shuffle(_Xte, _yte, random_state=0)
+            Xtr_cvlist.append(_Xtr)
+            ytr_cvlist.append(_ytr)
+            Xte_cvlist.append(_Xte)
+            yte_cvlist.append(_yte)
+        dataset = zip(Xtr_cvlist, ytr_cvlist, Xte_cvlist, yte_cvlist)
+        # print type(dataset)
+        pkl.dump(dataset, open(path_pkl + name_pkl+'_sample'+str(nsample)+'.p', 'wb'))
+        # pkl.dump(dataset, open(path_pkl + name_pkl, 'wb'))
 
 
+def save_stage_prediction_data_oversample_repeat(n_timesteps=5, n_stages=1, n_samples=30):
+    """Save full MCI data in pkl format
+        * for prediction
+          * predict whether a patient will convert with:
+            ## n_stage before convert (1 stage = 6 months)
+            ## n_timesteps of observations we have
+        * oversample/repeat the positive examples utill achieve a balanced dataset
+        * step 1: obtain raw data
+        * step 2: obtain cross-validate data
+        * step 3: oversample the dataset to make it balanced
+    """
+    path_conv = data_info['path'] + 'DFConv/'
+    path_ncon = data_info['path'] + 'DFNConv/'
+    path_convlabels = data_info['path'] + 'SeqLabelsConv/'
+    path_pkl = data_info['path']  #+'/home/zhen/Projects/Data/MCI/'
+    name_pkl = 'mci2ad_%dt_%ds_prediction_over2_shuf_cv' % (
+        n_timesteps, n_stages)  # over2 is different from over
+    n_dim = 630
+    shape = (n_timesteps, n_dim)
+    for (r1, ds1, fs1) in walk(path_conv):
+        pass
+    for (r0, ds0, fs0) in walk(path_ncon):
+        pass
+
+    for nsample in range(n_samples):
+        # obtain the raw data
+        Xp = []  # data ndarray for positive
+        yp = []  # label vector for positive
+        Xn = []  # data ndarray for negative
+        yn = []  # label vector for negative
+        for f in fs1:  # get positive samples
+            y1 = np.genfromtxt(path_convlabels + f, delimiter=' ')
+            idx_of_start = np.where(y1)[0][0]  # the index of first 1
+            if idx_of_start >= n_timesteps + n_stages - 1:
+                z = np.zeros(shape, dtype=float)
+                x0 = np.genfromtxt(path_conv + f, delimiter=',')
+                x = x0[idx_of_start - n_timesteps - n_stages + 1:idx_of_start -
+                       n_stages + 1, :]
+                z[:x.shape[0], :x.shape[1]] = x
+                Xp.append(z)
+                yp.append(1)
+        for f in fs0:
+            z = np.zeros(shape, dtype=float)
+            x0 = np.genfromtxt(path_ncon + f, delimiter=',')
+            x = x0[:n_timesteps, :]
+            z[:x.shape[0], :x.shape[1]] = x
+            Xn.append(z)
+            # X.append(np.genfromtxt(path_conv+f,delimiter=','))
+            yn.append(0)
+        Xp, yp = shuffle(Xp, yp, random_state=0)
+        Xn, yn = shuffle(Xn, yn, random_state=0)
+        # obtain the cv_index
+        nb_folds = 5
+        if len(Xp) < nb_folds:
+            nb_folds = len(Xp)
+        # print 'folds: %d' % nb_folds
+        print 'stage: %d vs. timestamp: %d vs. positive: %d vs. negative: %d' % (
+            n_stages, n_timesteps, len(yp), len(yn))
+        kfp = KFold(len(Xp), n_folds=nb_folds)  #
+        kfn = KFold(len(Xn), n_folds=nb_folds)
+        Xp_cvlist = []
+        Xn_cvlist = []
+        yp_cvlist = []
+        yn_cvlist = []
+        Xpte_cvlist = []
+        Xnte_cvlist = []
+        ypte_cvlist = []
+        ynte_cvlist = []
+        Xtr_cvlist = []
+        ytr_cvlist = []
+        Xte_cvlist = []
+        yte_cvlist = []
+        for train_idx, test_idx in kfp:
+            # print type(train_idx),train_idx
+            # print type(Xp)
+            # print itemgetter(train_idx)(Xp)
+            Xp_cvlist.append([Xp[i] for i in train_idx])
+            yp_cvlist.append([yp[i] for i in train_idx])
+            Xpte_cvlist.append([Xp[i] for i in test_idx])
+            ypte_cvlist.append([yp[i] for i in test_idx])
+        for train_idx, test_idx in kfn:
+            Xn_cvlist.append([Xn[i] for i in train_idx])
+            yn_cvlist.append([yn[i] for i in train_idx])
+            Xnte_cvlist.append([Xn[i] for i in test_idx])
+            ynte_cvlist.append([yn[i] for i in test_idx])
+        for i in range(len(Xp_cvlist)):
+            if len(Xp_cvlist[i]) < 0.8 * len(Xn_cvlist[i]):
+                Xp_cvlist[i] *= 2
+                yp_cvlist[i] *= 2
+            _Xtr = Xp_cvlist[i] + Xn_cvlist[i]
+            _ytr = yp_cvlist[i] + yn_cvlist[i]
+            _Xte = Xpte_cvlist[i] + Xnte_cvlist[i]
+            _yte = ypte_cvlist[i] + ynte_cvlist[i]
+            _Xtr, _ytr = shuffle(_Xtr, _ytr, random_state=0)
+            _Xte, _yte = shuffle(_Xte, _yte, random_state=0)
+            Xtr_cvlist.append(_Xtr)
+            ytr_cvlist.append(_ytr)
+            Xte_cvlist.append(_Xte)
+            yte_cvlist.append(_yte)
+        dataset = zip(Xtr_cvlist, ytr_cvlist, Xte_cvlist, yte_cvlist)
+        pkl.dump(dataset, open(path_pkl + name_pkl+'_sample'+str(nsample)+'.p', 'wb'))
 
 def save_data():
     """Save full MCI data in pkl format
@@ -583,14 +851,14 @@ def save_data():
     pkl.dump([X, y, kf], open(path_pkl + 'mci_shuf_cv.p', 'wb'))
 
 
-def load_full_data(path_pkl=data_info['path'],
-                   name_pkl='mci_shuf_cv.p'):
+def load_full_data(path_pkl=data_info['path'], name_pkl='mci_shuf_cv.p'):
     """Load full data from pickle file
     """
 
     with open(path_pkl + name_pkl, 'rb') as f:
         data = pkl.load(f)
     return data[0], data[1], data[2]
+
 
 def load_over_data(path_pkl=data_info['path'],
                    name_pkl='mci2ad_5t_prediction_over2_shuf_cv.p'):
@@ -600,6 +868,7 @@ def load_over_data(path_pkl=data_info['path'],
     with open(path_pkl + name_pkl, 'rb') as f:
         data = pkl.load(f)
     return data
+
 
 def id_extract(s, id_pattern=re.compile(ur'^(\d+)')):
     """Extract number in the head of a string
@@ -614,10 +883,15 @@ def id_extract(s, id_pattern=re.compile(ur'^(\d+)')):
 def main():
     """function for runing some functionalities"""
     # save_prediction_data(n_timesteps=1)
-    save_regression_data(n_timesteps=6)
+    # save_regression_data(n_timesteps=6)
     # save_regression_dif_data(n_timesteps=1)
     # save_prediction_data_oversample(n_timesteps=1)
     # score_preproc()
+    # save_stage_prediction_data_oversample(n_timesteps=1, n_stages=4)
+    for i in [1,2,3,4]:
+        # save_prediction_data_oversample_repeat(n_timesteps=i, n_samples=20)
+        save_stage_prediction_data_oversample_repeat(n_timesteps=i, n_stages=1, n_samples=20)
+    # check_data_availablity()
 
 
 if __name__ == '__main__':
